@@ -1,0 +1,303 @@
+{
+  "name": "Premium Telegram Bot",
+  "nodes": [
+    {
+      "parameters": {
+        "updates": [
+          "message"
+        ],
+        "additionalFields": {}
+      },
+      "id": "trg",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "00000000-0000-4000-8000-000000000007"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.message.text }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "exists",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "id": "istext",
+      "name": "Is it text?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "={{ $json.message.text }}",
+        "options": {
+          "systemMessage": "You are the customer support assistant for {{BUSINESS_NAME}}.\n\nYou know nothing about this business by heart. Whenever a customer asks about working hours,\ndelivery, returns, payment, prices, stock, the address or contact details, call the\n\"Get business info\" tool and answer from what it returns.\n\n- Call the tool before answering any factual question. Do not answer such a question from\n  memory, and do not guess even when the question looks like one you answered before.\n- If the tool returns nothing that fits the question, say you will check with a colleague.\n\nRules:\n- Keep replies short: one or two sentences. Customers read on a phone.\n- Reply in the same language the customer wrote in.\n- Never invent a price, a stock level, a date or an address. If you do not have the answer,\n  say that you will check with a colleague and ask the customer to leave their question.\n- Plain text only. No bold, no italics, no markdown, no bullet lists.\n- Never say that you are an AI, a bot, a model or an automation.\n\nLanguage handling:\n- Detect the language of each individual message, not of the conversation. A customer may\n  switch language in the middle of a chat; follow them message by message.\n- If one message mixes two languages, reply in the language most of the message is in.\n- If the language is unclear, or the message is only emoji, numbers or a single word, reply\n  in {{DEFAULT_LANGUAGE}} and ask which language the customer prefers.\n- Keep names, product codes, model numbers and addresses exactly as written. Never translate\n  them, never reformat them.\n"
+        }
+      },
+      "id": "ai",
+      "name": "Main AI",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 1.7,
+      "position": [
+        460,
+        220
+      ],
+      "onError": "continueErrorOutput",
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 1000
+    },
+    {
+      "parameters": {
+        "modelName": "models/gemini-2.5-flash",
+        "options": {}
+      },
+      "id": "llm",
+      "name": "Google Gemini Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatGoogleGemini",
+      "typeVersion": 1,
+      "position": [
+        400,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "={{ $json.output }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "reply",
+      "name": "Send reply",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        140
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "Sorry, something went wrong on our side. Please write your question again in a minute, or call us.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "sorry",
+      "name": "Apologise to the customer",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        320
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "YOUR_TELEGRAM_CHAT_ID",
+        "text": "=Bot error\n\nFrom: {{ $('Telegram Trigger').item.json.message.chat.id }}\nMessage: {{ $('Telegram Trigger').item.json.message.text }}\n\n{{ JSON.stringify($json.error ?? $json, null, 2) }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "owner",
+      "name": "Send error to the owner",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "text": "Sorry, I can only read written messages. Could you type your question?",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "id": "nontext",
+      "name": "Explain that only text works",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        460,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "sessionIdType": "customKey",
+        "sessionKey": "={{ $('Telegram Trigger').item.json.message.chat.id }}",
+        "tableName": "n8n_chat_histories",
+        "contextWindowLength": 10
+      },
+      "id": "mem",
+      "name": "Postgres Chat Memory",
+      "type": "@n8n/n8n-nodes-langchain.memoryPostgresChat",
+      "typeVersion": 1.3,
+      "position": [
+        560,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT key, value FROM business_info;",
+        "options": {},
+        "descriptionType": "manual",
+        "toolDescription": "The business's own facts: working_hours, delivery, return_policy, payment, address, contact. Call this before answering any question about the business. Returns every row as key and value."
+      },
+      "id": "tool",
+      "name": "Get business info",
+      "type": "n8n-nodes-base.postgresTool",
+      "typeVersion": 2.5,
+      "position": [
+        720,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "content": "## Premium tier\n\nFill in every {{PLACEHOLDER}} in **Main AI**, and YOUR_TELEGRAM_CHAT_ID in **Send error to the owner**.\n\nTranslate the three English sentences sent to customers before going live.",
+        "height": 200,
+        "width": 320
+      },
+      "id": "note",
+      "name": "Note",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -40,
+        60
+      ]
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Is it text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is it text?": {
+      "main": [
+        [
+          {
+            "node": "Main AI",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Explain that only text works",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Main AI": {
+      "main": [
+        [
+          {
+            "node": "Send reply",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Apologise to the customer",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Send error to the owner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Gemini Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Main AI",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Postgres Chat Memory": {
+      "ai_memory": [
+        [
+          {
+            "node": "Main AI",
+            "type": "ai_memory",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get business info": {
+      "ai_tool": [
+        [
+          {
+            "node": "Main AI",
+            "type": "ai_tool",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": ""
+  },
+  "tags": []
+}
